@@ -1,6 +1,8 @@
 #  Scrapuj
 
-**Scrapuj** (Polish for "Lets Scrape") is a versatile web scraping application built with Python and packaged for easy use. It features a user-friendly graphical interface using the **Flet** framework, allowing users to define scraping logic via JSON templates and process lists of URLs efficiently. It supports both the fast **Requests** library for static content and the robust **Playwright** browser automation tool for dynamic, JavaScript-heavy sites.
+**Scrapuj** is a desktop application that I developed in Python (with significant AI assistance). It was built using Flet GUI and is distributed as an executable (EXE). The application's core strength is its accessible design philosophy: users define data extraction fields by simply visually selecting the text or elements on the target webpage, allowing the program to automatically find stable CSS or XPath selectors. For complex sites, Scrapuj employs a dual-engine system, using the fast Requests library for static HTML and the robust Playwright engine for rendering JavaScript pages. It includes a Visual Script Builder for defining necessary interaction flows (e.g., clicks and loops) and Session Management for authenticated content. Final data output is structured, supporting formats from JSON to a comprehensive XLSX metadata spreadsheet linked to content files.
+
+The primary audience includes Analysts, Researchers, and Students who need to acquire structured data but lack HTML or coding expertise. Scrapuj is designed for non-technical users who require a Graphical User Interface (GUI) to manage the entire scraping process. It is ideal for maintaining authenticated sessions and dealing with JavaScript-heavy pages without manual code updates. The built-in stability features—including automatic User-Agent rotation, delays, and network retries—ensure reliable data extraction for routine use.
 
 ---
 
