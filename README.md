@@ -25,6 +25,12 @@
 
 ---
 
+
+https://github.com/user-attachments/assets/21b5621e-a28e-4150-9e15-3e689789f258
+
+
+
+---
 ## 💾 Download & Run (Recommended)
 
 The easiest way to use Scrapuj is via the standalone executable.
