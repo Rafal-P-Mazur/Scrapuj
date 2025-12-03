@@ -94,7 +94,10 @@ The application guides you through four main steps in the GUI:
 1.  **Template** 📁
     * **Select Existing Template:** Choose a **JSON template** file defining the selectors for the data you want to extract. </br>
      **OR**</br>
-    * **Create New Template:** Click **"Create New Template..."** to launch the standalone **Template Creator utility**. This tool lets you visually browse a website, click on elements (text, price, link), and automatically generate stable CSS or XPath selectors which you can then save as a JSON file.
+    * **Create New Template:** Click **"Create New Template..."** to launch the standalone **Template Creator utility** to launch the standalone Template Creator utility. This tool lets you visually browse a website and define data fields:
+         * Basic Selection: Click elements to generate stable CSS or XPath selectors.
+         * Advanced Merging: Select multiple similar items (e.g., all prices) using the same category name to automatically merge them into one robust common selector.
+         * XPath Exclusion: To remove unwanted blocks (like ads or sidebars) from a parent element, visually select the unwanted block and enter the category name followed by a hyphen (e.g., description-).
 2.  **URLs** 🔗
     * Paste target **URLs** directly (one per line) or load a list from a `.txt` file.
 3.  **Configuration** ⚙️
