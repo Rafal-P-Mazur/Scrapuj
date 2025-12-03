@@ -1367,56 +1367,167 @@ document.addEventListener("mouseup", function() {
         savePanelState();
     }
 });
-
-  // Button actions (use existing pywebview API functions)
-  // --- REPLACE your entire addBtn.addEventListener function with this ---
-
-  addBtn.addEventListener("click", () => {
+addBtn.addEventListener("click", () => {
     if (!lastSelectedElement) { alert("No element selected!"); return; }
+    
     let category = prompt(`Selected text: "${lastSelectedElement.selectedText}"\nEnter category name (Cancel to skip):`);
     if (!category) return;
 
-    if (!categorySelections[category]) categorySelections[category] = [];
+    const newSelector = lastSelectedElement.selector;
+    const isXPath = newSelector.startsWith('/') || newSelector.startsWith('(');
 
-    // Don't add duplicates
-    if (categorySelections[category].includes(lastSelectedElement.selector)) {
+    // Determine the base category name (without trailing '-')
+    const isExclusionAttempt = category.endsWith('-');
+    const baseCategory = isExclusionAttempt ? category.slice(0, -1) : category;
+    
+    // Get the current merged selector for the base category
+    const existingSelector = (categorySelections[baseCategory] && categorySelections[baseCategory].length > 0) 
+                             ? getCommonSelector(categorySelections[baseCategory]) 
+                             : null;
+
+    // --- CORRECTED EXCLUSION LOGIC (XPath Only) ---
+    if (isXPath && isExclusionAttempt && existingSelector) {
+        
+        let newElement = null;
+        try {
+            const result = document.evaluate(newSelector, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+            newElement = result.singleNodeValue;
+        } catch (e) {
+            console.error("Invalid new selector for exclusion check:", newSelector, e);
+        }
+
+        if (newElement) {
+            category = baseCategory; 
+            const exclusionPredicate = getExclusionPredicate(newElement);
+            let newExcludedSelector = existingSelector; 
+            
+            // Regex to match the LATEST exclusion filter, capturing the tag and the content
+            // Captures: 1: Target Tag (e.g., /*, /a, or nothing) 2: Exclusion Content
+            const exclusionRegex = /(\/\*|\[\w+\])?\[not\((.*)\)\]$/;
+            const existingExclusionMatch = existingSelector.match(exclusionRegex);
+
+            if (existingExclusionMatch) {
+                 const filterMatch = existingExclusionMatch[0];
+                 const currentExclusions = existingExclusionMatch[2]; // Content inside not()
+                 const baseSelector = existingSelector.substring(0, existingSelector.length - filterMatch.length);
+                 const targetTag = existingExclusionMatch[1] || '/*';
+
+                 const newExclusionContentMatch = exclusionPredicate.match(/not\((.*)\)/);
+                 if (!newExclusionContentMatch) {
+                    alert("Could not extract exclusion content for the new element. Exclusion not applied.");
+                    return;
+                 }
+                 const newExclusionContent = newExclusionContentMatch[1];
+                 
+                 // Prevent duplicates
+                 if (currentExclusions.includes(newExclusionContent)) {
+                    alert(`Selector for '${category}' already excludes this element.`);
+                    return;
+                 }
+
+                 // Combine them using 'or' into a single [not(...)] segment
+                 const newExclusionFilter = `${targetTag}[not(${currentExclusions} or ${newExclusionContent})]`;
+
+                 newExcludedSelector = baseSelector + newExclusionFilter;
+                 
+            } else {
+                 // No existing exclusion, add the first one as a child exclusion
+                 newExcludedSelector = `${existingSelector}/*[${exclusionPredicate.substring(1)}`;
+            }
+
+            // Save the newly modified selector and update the UI
+            safeCall("save_selector", category, newExcludedSelector).then(() => {
+                categorySelections[category] = [newExcludedSelector]; 
+                addSelectorToPanel(category, newExcludedSelector);
+                applyHighlightsFromCategorySelections();
+                savePanelState();
+            });
+            lastSelectedElement = null;
+            return; // EXIT: Exclusion handled.
+        }
+    }
+    // --- END CORRECTED EXCLUSION LOGIC ---
+    
+    // Normal selector logic (merging or adding first selector)
+    
+    // Check if the user is trying to add a new selector to an existing category (non-exclusion case).
+    if (existingSelector && existingSelector !== newSelector) {
+         categorySelections[baseCategory] = []; // Reset for merging
+    }
+
+    if (!categorySelections[baseCategory])
+        categorySelections[baseCategory] = [];
+    
+    if (categorySelections[baseCategory].includes(newSelector)) {
         console.log("Duplicate selector, skipping.");
         return;
     }
 
-    // --- NEW ROBUST LOGIC ---
-
     // 1. Temporarily add the new selector to the list
-    categorySelections[category].push(lastSelectedElement.selector);
-
+    categorySelections[baseCategory].push(newSelector);
+    
     // 2. Try to merge all selectors in the list
-    let mergedSelector = getCommonSelector(categorySelections[category]);
-
+    let mergedSelector = getCommonSelector(categorySelections[baseCategory]);
+    
     if (mergedSelector) {
         // 3. SUCCESS: The merge worked. Save and update the pill.
-        safeCall("save_selector", category, mergedSelector).then(() => {
-            addSelectorToPanel(category, mergedSelector);
-            applyHighlightsFromCategorySelections(); // This will highlight using the new merge
+        safeCall("save_selector", baseCategory, mergedSelector).then(() => {
+            categorySelections[baseCategory] = [mergedSelector];
+            addSelectorToPanel(baseCategory, mergedSelector);
+            applyHighlightsFromCategorySelections();
             savePanelState();
         });
     } else {
         // 4. FAILURE: The merge failed.
-        // Remove the selector we just tried to add (roll back)
-        categorySelections[category].pop(); 
-
-        if (categorySelections[category].length > 0) {
-            // There were already items in the list
+        categorySelections[baseCategory].pop(); 
+        
+        if (categorySelections[baseCategory].length > 0) {
             alert("Selection failed. The new item is too different to be merged with the existing items in this category. Selection not added.");
         } else {
-            // This was the very first item, and it failed to even generate a selector
             alert("Selection failed. Could not generate a valid selector for this item.");
         }
-        // We do *not* update the pill, so the old one stays.
     }
-
+    
     lastSelectedElement = null;
 });
+// --- NEW: Helper to build an exclusion predicate 
+function getExclusionPredicate(el) {
+    // Priority 1: Check for unique ID (still best to use exact match for ID)
+    if (el.id) {
+        const prefix = el.id.replace(/\d+$/, '');
+        if (prefix.length > 2) {
+            return `[not(starts-with(@id, '${prefix}'))]`;
+        }
+        return `[not(@id='${el.id}')]`;
+    }
 
+    // Priority 2: Use a combination of tag and class (UPDATED TO USE CONTAINS)
+    if (el.className) {
+        // Select the first "good" class for exclusion, or use the entire className string.
+        // Using the entire className string is the most precise exclusion.
+        const classToExclude = el.className.trim();
+
+        if (classToExclude.length > 0) {
+            // Use 'contains' to match the specific class string within the element's @class attribute.
+            // Note: For multi-class matches, you might eventually need normalize-space(), but contains() is often sufficient 
+            // for simple exclusions like the example you provided (e.g., alignfull).
+            return `[not(descendant-or-self::*[contains(@class, '${classToExclude}')])]`;
+        }
+    }
+
+    // Priority 3: Fallback to tag and unique position (pinpoint logic, simple version)
+    // This is less stable but necessary for unclassed/un-ID'd elements.
+    let index = 1;
+    let sibling = el.previousElementSibling;
+    while (sibling) {
+        if (sibling.tagName === el.tagName) {
+            index++;
+        }
+        sibling = sibling.previousElementSibling;
+    }
+    const tagName = el.tagName.toLowerCase();
+    return `[not(*[name()='${tagName}'][${index}])]`; 
+}
 
     loadBtn.addEventListener("click",()=>{ safeCall("load_template").then(result=>{
         if(result.status==="ok"){ list.innerHTML=""; categorySelections={}; for(const [category,selector] of Object.entries(result.selectors)){ addSelectorToPanel(category,selector); categorySelections[category]=[selector]; } highlightAllSelectors(result.selectors); alert("Template loaded from "+result.filename); } else alert("Error: "+result.message); }); });
@@ -1691,21 +1802,19 @@ function addSelectorToPanel(category, selector, initialVisible = true) {
 
   if (!categorySelections[category]) categorySelections[category] = [selector];
 }
-// --- Mouse selection ---
-document.addEventListener('mouseup', function(e) {
-    let selection = window.getSelection();
-    if (!selection || selection.isCollapsed) return;
-    let selectedText = selection.toString().trim();
-    if (!selectedText) return;
-    let range = selection.getRangeAt(0);
-    let container = range.commonAncestorContainer;
-    if (container.nodeType === Node.TEXT_NODE) container = container.parentNode;
+// --- Element Selection ---
+document.addEventListener('mousedown', function(e) {
+    // Only capture on left-click and if not interacting with the panel/navbar
+    if (e.button !== 0) return;
+    if (e.target.closest('#__scraper_topcontainer')) return; 
+    if (e.target.closest('#__scraper_nav_bar')) return;
 
+    let container = e.target;
     if (container.closest('iframe')) return;
-    if (!isTextual(container)) return; // ignore media blocks
+    if (!isTextual(container)) return; 
 
+    // Determine the selector based on current mode
     let selector;
-    // --- THIS IS THE KEY CHANGE ---
     if (window.selectorMode === 'xpath') {
         selector = pinpointMode ? getXPathPinpointSelector(container) : getXPathElasticSelector(container);
     } else { // Default to CSS
@@ -1713,8 +1822,61 @@ document.addEventListener('mouseup', function(e) {
     }
 
     if (!selector) return;
+
+    // Temporarily store the element details. selectedText is empty for a click.
+    lastSelectedElement = { selector: selector, selectedText: "" }; 
+
+    // Visual feedback: highlight the element on click
+    document.querySelectorAll('.__scraper_temp_highlight').forEach(el => {
+        el.classList.remove('__scraper_temp_highlight');
+        el.style.boxShadow = '';
+    });
+
+    container.classList.add('__scraper_temp_highlight');
+    container.style.boxShadow = `0 0 0 3px ${selectorColors[selector] ? selectorColors[selector].replace('0.3','1').replace('rgba','rgb') : '#fbbd08'} inset`;
+
+    e.stopPropagation(); // Stop click from propagating potentially
+}, true); // Use capturing phase
+
+// --- Text Selection (Overrides Element Selection if text is selected) ---
+document.addEventListener('mouseup', function(e) {
+    let selection = window.getSelection();
+    let selectedText = selection.toString().trim();
+
+    // Check if we actually made a text selection
+    if (!selection || selection.isCollapsed || !selectedText) {
+        // If no text selected, keep the element from mousedown
+        return; 
+    }
+
+    // If text IS selected, override lastSelectedElement with text details
+    let range = selection.getRangeAt(0);
+    let container = range.commonAncestorContainer;
+    if (container.nodeType === Node.TEXT_NODE) container = container.parentNode;
+
+    if (container.closest('iframe')) return;
+    if (!isTextual(container)) return; 
+
+    // Determine the selector for the text's container
+    let selector;
+    if (window.selectorMode === 'xpath') {
+        selector = pinpointMode ? getXPathPinpointSelector(container) : getXPathElasticSelector(container);
+    } else { 
+        selector = pinpointMode ? getPinpointSelector(container) : getElasticSelector(container);
+    }
+
+    if (!selector) return;
+
+    // Override the lastSelectedElement
     lastSelectedElement = { selector, selectedText };
-});
+
+    // Remove the temporary visual click feedback
+    document.querySelectorAll('.__scraper_temp_highlight').forEach(el => {
+        el.classList.remove('__scraper_temp_highlight');
+        el.style.boxShadow = '';
+    });
+
+}, true); // Use capturing phase
 }
 
 if (!document.getElementById("__scraper_panel")) {
